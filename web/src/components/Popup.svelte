@@ -1,10 +1,45 @@
 <script lang="ts">
+    import { tick } from "svelte";
     import { accounts, activeAccount, popupDetails, loading, translations } from "../store/stores";
     import {fetchNui} from "../utils/fetchNui"
     let amount: number = 0;
+    let displayAmount: string = "";
+    let amountInput: HTMLInputElement;
+    let cursorInfo: { digitsBefore: number; formattedValue: string } | null = null;
     let comment: string = "";
     let stateid: string = "";
     $: account = $accounts.find((accountItem: any) => $activeAccount === accountItem.id);
+
+    function handleAmountInput(event: Event) {
+        const el = event.target as HTMLInputElement;
+        const rawValue = el.value;
+        const selectionStart = el.selectionStart ?? 0;
+        const beforeCursor = rawValue.substring(0, selectionStart);
+        const commaCountBefore = (beforeCursor.match(/[^0-9]/g) || []).length;
+        const digits = rawValue.replace(/[^0-9]/g, "");
+        if (digits === "") {
+            displayAmount = "";
+            amount = 0;
+            return;
+        }
+        const formatted = Number(digits).toLocaleString('en-us');
+        const digitsBeforeCursor = selectionStart - commaCountBefore;
+        displayAmount = formatted;
+        cursorInfo = { digitsBefore: digitsBeforeCursor, formattedValue: formatted };
+        amount = Math.floor(Math.max(0, Number(digits)));
+        tick().then(() => {
+            if (amountInput && cursorInfo !== null) {
+                const { digitsBefore, formattedValue } = cursorInfo;
+                let newPos = 0;
+                let count = 0;
+                for (let i = 0; i < formattedValue.length && count < digitsBefore; i++) {
+                    if (/[0-9]/.test(formattedValue[i])) count++;
+                    newPos++;
+                }
+                amountInput.setSelectionRange(newPos, newPos);
+            }
+        });
+    }
 
     function closePopup() {
         popupDetails.update((val: any) => ({
@@ -33,7 +68,7 @@
         <form action="#">
             <div class="form-row">
                 <label for="amount">{$translations.amount}</label>
-                <input bind:value={amount} type="number" name="amount" id="amount" placeholder="$" />
+                <input bind:this={amountInput} value={displayAmount} on:input={handleAmountInput} type="text" name="amount" id="amount" placeholder="$" />
             </div>
 
             <div class="form-row">
