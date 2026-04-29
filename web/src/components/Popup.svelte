@@ -10,35 +10,68 @@
     let stateid: string = "";
     $: account = $accounts.find((accountItem: any) => $activeAccount === accountItem.id);
 
+    function restoreCursor() {
+        if (amountInput && cursorInfo !== null) {
+            const { digitsBefore, formattedValue } = cursorInfo;
+            let newPos = 0;
+            let count = 0;
+            for (let i = 0; i < formattedValue.length && count < digitsBefore; i++) {
+                if (/[0-9]/.test(formattedValue[i])) count++;
+                newPos++;
+            }
+            amountInput.setSelectionRange(newPos, newPos);
+        }
+    }
+
+    function applyAmount(rawValue: string, rawCursorPos: number) {
+        const digits = rawValue.replace(/[^0-9]/g, "");
+        if (digits === "") {
+            displayAmount = "";
+            amount = 0;
+            tick().then(() => amountInput?.setSelectionRange(0, 0));
+            return;
+        }
+        const formatted = Number(digits).toLocaleString('en-us');
+        const beforeCursor = rawValue.substring(0, rawCursorPos);
+        const digitsBeforeCursor = (beforeCursor.match(/[0-9]/g) || []).length;
+        displayAmount = formatted;
+        amount = Math.floor(Math.max(0, Number(digits)));
+        cursorInfo = { digitsBefore: digitsBeforeCursor, formattedValue: formatted };
+        tick().then(() => restoreCursor());
+    }
+
+    function handleAmountKeydown(event: KeyboardEvent) {
+        const el = event.target as HTMLInputElement;
+        const pos = el.selectionStart ?? 0;
+        const val = el.value;
+        if (event.key === "Backspace" && pos > 0 && val[pos - 1] === ",") {
+            event.preventDefault();
+            const newVal = val.slice(0, pos - 2) + val.slice(pos);
+            applyAmount(newVal, pos - 2);
+        } else if (event.key === "Delete" && pos < val.length && val[pos] === ",") {
+            event.preventDefault();
+            const newVal = val.slice(0, pos) + val.slice(pos + 2);
+            applyAmount(newVal, pos);
+        }
+    }
+
     function handleAmountInput(event: Event) {
         const el = event.target as HTMLInputElement;
-        const rawValue = el.value;
         const selectionStart = el.selectionStart ?? 0;
-        const beforeCursor = rawValue.substring(0, selectionStart);
+        const beforeCursor = el.value.substring(0, selectionStart);
         const commaCountBefore = (beforeCursor.match(/[^0-9]/g) || []).length;
-        const digits = rawValue.replace(/[^0-9]/g, "");
+        const digitsBeforeCursor = selectionStart - commaCountBefore;
+        const digits = el.value.replace(/[^0-9]/g, "");
         if (digits === "") {
             displayAmount = "";
             amount = 0;
             return;
         }
         const formatted = Number(digits).toLocaleString('en-us');
-        const digitsBeforeCursor = selectionStart - commaCountBefore;
         displayAmount = formatted;
-        cursorInfo = { digitsBefore: digitsBeforeCursor, formattedValue: formatted };
         amount = Math.floor(Math.max(0, Number(digits)));
-        tick().then(() => {
-            if (amountInput && cursorInfo !== null) {
-                const { digitsBefore, formattedValue } = cursorInfo;
-                let newPos = 0;
-                let count = 0;
-                for (let i = 0; i < formattedValue.length && count < digitsBefore; i++) {
-                    if (/[0-9]/.test(formattedValue[i])) count++;
-                    newPos++;
-                }
-                amountInput.setSelectionRange(newPos, newPos);
-            }
-        });
+        cursorInfo = { digitsBefore: digitsBeforeCursor, formattedValue: formatted };
+        tick().then(() => restoreCursor());
     }
 
     function closePopup() {
@@ -68,7 +101,7 @@
         <form action="#">
             <div class="form-row">
                 <label for="amount">{$translations.amount}</label>
-                <input bind:this={amountInput} value={displayAmount} on:input={handleAmountInput} type="text" name="amount" id="amount" placeholder="$" />
+                <input bind:this={amountInput} value={displayAmount} on:keydown={handleAmountKeydown} on:input={handleAmountInput} type="text" name="amount" id="amount" placeholder="$" />
             </div>
 
             <div class="form-row">
