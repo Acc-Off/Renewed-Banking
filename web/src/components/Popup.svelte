@@ -5,73 +5,51 @@
     let amount: number = 0;
     let displayAmount: string = "";
     let amountInput: HTMLInputElement;
-    let cursorInfo: { digitsBefore: number; formattedValue: string } | null = null;
+    let cursorDigits: number | null = null;
     let comment: string = "";
     let stateid: string = "";
     $: account = $accounts.find((accountItem: any) => $activeAccount === accountItem.id);
 
-    function restoreCursor() {
-        if (amountInput && cursorInfo !== null) {
-            const { digitsBefore, formattedValue } = cursorInfo;
-            let newPos = 0;
-            let count = 0;
-            for (let i = 0; i < formattedValue.length && count < digitsBefore; i++) {
-                if (/[0-9]/.test(formattedValue[i])) count++;
-                newPos++;
-            }
-            amountInput.setSelectionRange(newPos, newPos);
-        }
+    const digitsOnly = (s: string) => s.replace(/\D/g, '');
+    const countDigitsBefore = (s: string, index: number) => digitsOnly(s.substring(0, index)).length;
+    const formatAmount = (n: number) => (n ? n.toLocaleString('en-US') : '');
+
+    function commitAmount(raw: string, cursorIndex: number) {
+        const num = parseInt(digitsOnly(raw), 10) || 0;
+        displayAmount = formatAmount(num);
+        amount = num;
+        cursorDigits = countDigitsBefore(raw, cursorIndex);
+        tick().then(() => restoreCursor());
     }
 
-    function applyAmount(rawValue: string, rawCursorPos: number) {
-        const digits = rawValue.replace(/[^0-9]/g, "");
-        if (digits === "") {
-            displayAmount = "";
-            amount = 0;
-            tick().then(() => amountInput?.setSelectionRange(0, 0));
-            return;
+    function restoreCursor() {
+        if (!amountInput || cursorDigits === null) return;
+        let newPos = 0;
+        let count = 0;
+        for (let i = 0; i < displayAmount.length && count < cursorDigits; i++) {
+            if (/\d/.test(displayAmount[i])) count++;
+            newPos++;
         }
-        const formatted = Number(digits).toLocaleString('en-us');
-        const beforeCursor = rawValue.substring(0, rawCursorPos);
-        const digitsBeforeCursor = (beforeCursor.match(/[0-9]/g) || []).length;
-        displayAmount = formatted;
-        amount = Math.floor(Math.max(0, Number(digits)));
-        cursorInfo = { digitsBefore: digitsBeforeCursor, formattedValue: formatted };
-        tick().then(() => restoreCursor());
+        amountInput.setSelectionRange(newPos, newPos);
+        cursorDigits = null;
     }
 
     function handleAmountKeydown(event: KeyboardEvent) {
         const el = event.target as HTMLInputElement;
         const pos = el.selectionStart ?? 0;
-        const val = el.value;
-        if (event.key === "Backspace" && pos > 0 && val[pos - 1] === ",") {
+        if (pos !== el.selectionEnd) return;
+        if (event.key === "Backspace" && el.value[pos - 1] === ",") {
             event.preventDefault();
-            const newVal = val.slice(0, pos - 2) + val.slice(pos);
-            applyAmount(newVal, pos - 2);
-        } else if (event.key === "Delete" && pos < val.length && val[pos] === ",") {
+            commitAmount(el.value.slice(0, pos - 2) + el.value.slice(pos), pos - 2);
+        } else if (event.key === "Delete" && el.value[pos] === ",") {
             event.preventDefault();
-            const newVal = val.slice(0, pos) + val.slice(pos + 2);
-            applyAmount(newVal, pos);
+            commitAmount(el.value.slice(0, pos) + el.value.slice(pos + 2), pos);
         }
     }
 
     function handleAmountInput(event: Event) {
         const el = event.target as HTMLInputElement;
-        const selectionStart = el.selectionStart ?? 0;
-        const beforeCursor = el.value.substring(0, selectionStart);
-        const commaCountBefore = (beforeCursor.match(/[^0-9]/g) || []).length;
-        const digitsBeforeCursor = selectionStart - commaCountBefore;
-        const digits = el.value.replace(/[^0-9]/g, "");
-        if (digits === "") {
-            displayAmount = "";
-            amount = 0;
-            return;
-        }
-        const formatted = Number(digits).toLocaleString('en-us');
-        displayAmount = formatted;
-        amount = Math.floor(Math.max(0, Number(digits)));
-        cursorInfo = { digitsBefore: digitsBeforeCursor, formattedValue: formatted };
-        tick().then(() => restoreCursor());
+        commitAmount(el.value, el.selectionStart ?? 0);
     }
 
     function closePopup() {
